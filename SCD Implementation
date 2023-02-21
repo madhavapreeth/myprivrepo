@@ -1,0 +1,222 @@
+
+SOURCE TABLE:
+
+mysql> DESC EMPLOYEE;
++--------+-------------+------+-----+---------+-------+
+| Field  | Type        | Null | Key | Default | Extra |
++--------+-------------+------+-----+---------+-------+
+| E_ID   | int         | NO   | PRI | NULL    |       |
+| E_NAME | varchar(20) | YES  |     | NULL    |       |
+| SAL    | int         | YES  |     | NULL    |       |
+| LOC    | varchar(20) | YES  |     | NULL    |       |
++--------+-------------+------+-----+---------+-------+
+
+TARGET TABLE:
+
+mysql> DESC EMP_HISTORY;
++------------+-------------+------+-----+---------+-------+
+| Field      | Type        | Null | Key | Default | Extra |
++------------+-------------+------+-----+---------+-------+
+| S_KEY      | int         | YES  |     | NULL    |       |
+| E_ID       | int         | YES  |     | NULL    |       |
+| E_NAME     | varchar(20) | YES  |     | NULL    |       |
+| SAL        | int         | YES  |     | NULL    |       |
+| LOC        | varchar(20) | YES  |     | NULL    |       |
+| START_DATE | date        | YES  |     | NULL    |       |
+| END_DATE   | date        | YES  |     | NULL    |       |
+| PREV_LOC   | varchar(20) | YES  |     | NULL    |       |
+| INDICATOR  | varchar(2)  | YES  |     | NULL    |       |
++------------+-------------+------+-----+---------+-------+
+
+
+TRIGGERS FOR TYPE2 IMPLEMENTATION:
+
+DELIMITER $$
+CREATE TRIGGER TRIGGER2
+AFTER UPDATE ON EMPLOYEE
+FOR EACH ROW
+BEGIN
+     IF OLD.E_NAME!=NEW.E_NAME THEN 
+	UPDATE EMP_HISTORY SET E_NAME=NEW.E_NAME WHERE E_ID=NEW.E_ID;
+END IF;
+END $$
+DELIMITER ;
+
+
+DELIMITER $$
+CREATE TRIGGER INDI
+BEFORE UPDATE ON EMPLOYEE
+FOR EACH ROW
+BEGIN
+     IF OLD.SAL!=NEW.SAL THEN
+
+	UPDATE EMP_HISTORY SET END_DATE=START_DATE-1,INDICATOR='N'
+	WHERE E_ID=OLD.E_ID;
+
+END IF;
+END $$
+DELIMITER ;
+
+
+DELIMITER $$
+CREATE TRIGGER TRIGGER4
+AFTER UPDATE ON EMPLOYEE
+FOR EACH ROW
+BEGIN
+       IF OLD.SAL!=NEW.SAL THEN
+	INSERT INTO EMP_HISTORY(E_ID,E_NAME,SAL,LOC,PREV_LOC,START_DATE,END_DATE,INDICATOR)
+	VALUES(OLD.E_ID,OLD.E_NAME,NEW.SAL,OLD.LOC,'_',NOW(),'9999-12-31','Y');
+	
+END IF;
+END $$
+DELIMITER ;
+
+
+DELIMITER $$
+CREATE TRIGGER reset_surrogate_key
+BEFORE INSERT ON EMP_HISTORY
+FOR EACH ROW
+BEGIN
+  DECLARE max_surrogate_key INT;
+  DECLARE max_emp_id INT;
+  SELECT MAX(S_KEY), MAX(E_ID) INTO max_surrogate_key, max_emp_id FROM EMP_HISTORY WHERE e_id = NEW.e_id;
+  IF max_emp_id IS NULL THEN
+    SET max_emp_id = 0;
+  END IF;
+  IF max_surrogate_key IS NULL THEN
+    SET max_surrogate_key = 0;
+  END IF;
+  IF max_emp_id = NEW.E_id THEN
+    SET NEW.S_KEY = max_surrogate_key + 1;
+  ELSE
+    SET NEW.S_KEY = 1;
+  END IF; 
+END$$
+DELIMITER ;
+
+
+TRIGGERS FOR TYPE1 IMPLEMENTATION:
+
+DELIMITER $$
+CREATE TRIGGER TRIGGER2
+AFTER UPDATE ON EMPLOYEE
+FOR EACH ROW
+BEGIN
+IF OLD.E_NAME!=NEW.E_NAME THEN 
+	UPDATE EMP_HISTORY SET E_NAME=NEW.E_NAME WHERE E_ID=NEW.E_ID;
+END IF;
+END $$
+DELIMITER ;
+
+
+TRIGGERS FOR TYPE3 IMPLEMENTATION:
+
+DELIMITER $$
+CREATE TRIGGER TYPE3
+ATER UPDATE ON EMPLOYEE
+FOR EACH ROW
+BEGIN
+	IF OLD.LOC!=NEW.LOC THEN
+	UPDATE EMP_HISTORY SET LOC=NEW.LOC,PREV_LOC=OLD.LOC WHERE E_ID=NEW.E_ID;
+
+END IF;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE TRIGGER reset
+BEFORE INSERT ON EMP_HISTORY
+FOR EACH ROW
+BEGIN
+  DECLARE pre varchar(20);
+  DECLARE max_emp_id INT;
+  SELECT  PREV_LOC,MAX(E_ID) INTO pre,max_emp_id FROM EMP_HISTORY WHERE E_ID = NEW.E_ID;
+  IF max_emp_id = NEW.E_ID THEN
+  SET NEW.PREV_LOC = pre;
+  END IF;  
+END$$
+DELIMITER ;
+
+
+TYEP2 IMPLEMENTATION:   TYPE-2 IMPLEMENTATION FOR SAL
+
+
+mysql> INSERT INTO EMPLOYEE VALUES(10,'ADAMS',40000,'US');
+
+mysql> INSERT INTO EMPLOYEE VALUES(11,'JAMES',80000,'AUSTRALIA');
+
+mysql> SELECT * FROM EMPLOYEE;
++------+--------+-------+-----------+
+| E_ID | E_NAME | SAL   | LOC       |
++------+--------+-------+-----------+
+|   10 | ADAMS  | 40000 | US        |
+|   11 | JAMES  | 80000 | AUSTRALIA |
++------+--------+-------+-----------+
+
+mysql> SELECT * FROM EMP_HISTORY;
++-------+------+--------+-------+-----------+------------+----------+----------+-----------+
+| S_KEY | E_ID | E_NAME | SAL   | LOC       | START_DATE | END_DATE | PREV_LOC | INDICATOR |
++-------+------+--------+-------+-----------+------------+----------+----------+-----------+
+|     1 |   10 | ADAMS  | 40000 | US        | 2023-02-21 | NULL     | _        | Y         |
+|     1 |   11 | JAMES  | 80000 | AUSTRALIA | 2023-02-21 | NULL     | _        | Y         |
++-------+------+--------+-------+-----------+------------+----------+----------+-----------+
+
+mysql> UPDATE EMPLOYEE SET SAL=50000 WHERE E_ID=10;
+
+mysql> SELECT * FROM EMP_HISTORY;
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+| S_KEY | E_ID | E_NAME | SAL   | LOC       | START_DATE | END_DATE   | PREV_LOC | INDICATOR |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+|     1 |   10 | ADAMS  | 40000 | US        | 2023-02-21 | 2023-02-20 | _        | N         |
+|     1 |   11 | JAMES  | 80000 | AUSTRALIA | 2023-02-21 | NULL       | _        | Y         |
+|     2 |   10 | ADAMS  | 50000 | US        | 2023-02-21 | 9999-12-31 | _        | Y         |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+
+mysql> UPDATE EMPLOYEE SET SAL=90000 WHERE E_ID=10;
+
+
+mysql> SELECT * FROM EMP_HISTORY;
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+| S_KEY | E_ID | E_NAME | SAL   | LOC       | START_DATE | END_DATE   | PREV_LOC | INDICATOR |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+|     1 |   10 | ADAMS  | 40000 | US        | 2023-02-21 | 2023-02-20 | _        | N         |
+|     1 |   11 | JAMES  | 80000 | AUSTRALIA | 2023-02-21 | NULL       | _        | Y         |
+|     2 |   10 | ADAMS  | 50000 | US        | 2023-02-21 | 2023-02-20 | _        | N         |
+|     3 |   10 | ADAMS  | 90000 | US        | 2023-02-21 | 9999-12-31 | _        | Y         |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+
+
+
+TYPE 1 IMPLEMENTATION FOR E_NAME:
+
+
+mysql> UPDATE EMPLOYEE SET E_NAME='AMIT' WHERE E_ID=10;
+
+mysql> SELECT * FROM EMP_HISTORY;
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+| S_KEY | E_ID | E_NAME | SAL   | LOC       | START_DATE | END_DATE   | PREV_LOC | INDICATOR |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+|     1 |   10 | AMIT   | 40000 | US        | 2023-02-21 | 2023-02-20 | _        | N         |
+|     1 |   11 | JAMES  | 80000 | AUSTRALIA | 2023-02-21 | NULL       | _        | Y         |
+|     2 |   10 | AMIT   | 50000 | US        | 2023-02-21 | 2023-02-20 | _        | N         |
+|     3 |   10 | AMIT   | 90000 | US        | 2023-02-21 | 9999-12-31 | _        | Y         |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+
+
+TYPE 3 IMPLEMENTATION FOR LOC:
+
+mysql> UPDATE EMPLOYEE SET LOC='INDIA' WHERE E_ID=10;
+
+mysql> SELECT * FROM EMP_HISTORY;
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+| S_KEY | E_ID | E_NAME | SAL   | LOC       | START_DATE | END_DATE   | PREV_LOC | INDICATOR |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+|     1 |   10 | AMIT   | 40000 | INDIA     | 2023-02-21 | 2023-02-20 | US       | N         |
+|     1 |   11 | JAMES  | 80000 | AUSTRALIA | 2023-02-21 | NULL       | _        | Y         |
+|     2 |   10 | AMIT   | 50000 | INDIA     | 2023-02-21 | 2023-02-20 | US       | N         |
+|     3 |   10 | AMIT   | 90000 | INDIA     | 2023-02-21 | 9999-12-31 | US       | Y         |
++-------+------+--------+-------+-----------+------------+------------+----------+-----------+
+
+
+
+
